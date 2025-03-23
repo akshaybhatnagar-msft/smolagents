@@ -2,12 +2,13 @@ from typing import Optional
 
 from smolagents import HfApiModel, LiteLLMModel, OpenAIServerModel, TransformersModel, tool
 from smolagents.agents import CodeAgent, ToolCallingAgent
+from smolagents.models import AzureAIFoundryModel
 
 
 # Choose which inference type to use!
 
-available_inferences = ["hf_api", "hf_api_provider", "transformers", "ollama", "litellm", "openai"]
-chosen_inference = "openai"
+available_inferences = ["hf_api", "hf_api_provider", "transformers", "ollama", "litellm", "openai", "aifoundry"]
+chosen_inference = "aifoundry"
 
 print(f"Chose model: '{chosen_inference}'")
 
@@ -36,6 +37,9 @@ elif chosen_inference == "openai":
     # For anthropic: change model_id below to 'anthropic/claude-3-5-sonnet-latest'
     model = OpenAIServerModel(model_id="gpt-4o")
 
+elif chosen_inference == "aifoundry":
+    # For anthropic: change model_id below to 'anthropic/claude-3-5-sonnet-latest'
+    model = AzureAIFoundryModel(model_id="DeepSeek-R1", azure_endpoint="https://deephub5971927254.services.ai.azure.com/models", useEntra=True)
 
 @tool
 def get_weather(location: str, celsius: Optional[bool] = False) -> str:
