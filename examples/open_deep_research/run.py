@@ -21,6 +21,7 @@ from smolagents import (
     GoogleSearchTool,
     # HfApiModel,
     LiteLLMModel,
+    AzureAIFoundryModel,
     ToolCallingAgent,
 )
 
@@ -52,7 +53,7 @@ AUTHORIZED_IMPORTS = [
     "csv",
 ]
 load_dotenv(override=True)
-login(os.getenv("HF_TOKEN"))
+#login(os.getenv("HF_TOKEN"))
 
 append_answer_lock = threading.Lock()
 
@@ -91,7 +92,9 @@ def create_agent(model_id="o1"):
     }
     if model_id == "o1":
         model_params["reasoning_effort"] = "high"
-    model = LiteLLMModel(**model_params)
+    # model = LiteLLMModel(**model_params)
+    model = AzureAIFoundryModel(model_id="DeepSeek-R1", azure_endpoint="https://deephub5971927254.services.ai.azure.com/models", api_key="not required", useEntra=True)
+    
 
     text_limit = 100000
     browser = SimpleTextBrowser(**BROWSER_CONFIG)
@@ -138,11 +141,9 @@ def create_agent(model_id="o1"):
 
 
 def main():
-    args = parse_args()
+    agent = create_agent(model_id="deepseek-r1")
 
-    agent = create_agent(model_id=args.model_id)
-
-    answer = agent.run(args.question)
+    answer = agent.run("What does Micrsoft need to succeed in 2025?")
 
     print(f"Got this answer: {answer}")
 

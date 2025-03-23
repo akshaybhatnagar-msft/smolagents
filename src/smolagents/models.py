@@ -22,6 +22,10 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
+from azure.ai.inference import ChatCompletionsClient
+from azure.identity import DefaultAzureCredential
+from azure.core.credentials import AzureKeyCredential
+
 from huggingface_hub.utils import is_torch_available
 
 from .tools import Tool
@@ -1138,6 +1142,106 @@ class AzureOpenAIServerModel(OpenAIServerModel):
 
         return openai.AzureOpenAI(**self.client_kwargs)
 
+class AzureAIFoundryModel(OpenAIServerModel):
+    """This model connects to an Azure AI Foundry deployment.
+
+    Parameters:
+        model_id (`str`):
+            The model deployment name to use when connecting (e.g. "gpt-4o-mini").
+        azure_endpoint (`str`, *optional*):
+            The Azure endpoint, including the resource, e.g. `https://example-resource.azure.openai.com/`. If not provided, it will be inferred from the `AZURE_OPENAI_ENDPOINT` environment variable.
+        api_key (`str`, *optional*):
+            The API key to use for authentication. If not provided, it will be inferred from the `AZURE_OPENAI_API_KEY` environment variable.
+        api_version (`str`, *optional*):
+            The API version to use. If not provided, it will be inferred from the `OPENAI_API_VERSION` environment variable.
+        client_kwargs (`dict[str, Any]`, *optional*):
+            Additional keyword arguments to pass to the AzureOpenAI client (like organization, project, max_retries etc.).
+        custom_role_conversions (`dict[str, str]`, *optional*):
+            Custom role conversion mapping to convert message roles in others.
+            Useful for specific models that do not support specific message roles like "system".
+        **kwargs:
+            Additional keyword arguments to pass to the Azure OpenAI API.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        azure_endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+        client_kwargs: Optional[Dict[str, Any]] = None,
+        custom_role_conversions: Optional[Dict[str, str]] = None,
+        useEntra: Optional[bool] = False,
+        **kwargs,
+    ):
+        # if importlib.util.find_spec("azure-ai-inference") is None:
+        #     raise ModuleNotFoundError(
+        #         "Please install 'azure-ai-inference' extra to use AzureAIFoundryModel: `pip install 'smolagents[azure-ai-inference]'`"
+        #     )
+        client_kwargs = client_kwargs or {}
+        client_kwargs.update(
+            {
+                "api_version": api_version,
+                "azure_endpoint": azure_endpoint,
+            }
+        )
+
+        if useEntra:
+            self.localClient = ChatCompletionsClient(
+                endpoint=azure_endpoint,
+                credential=DefaultAzureCredential(),
+                credential_scopes=["https://cognitiveservices.azure.com/.default"],
+            )
+        else:
+            self.localClient = ChatCompletionsClient (
+                endpoint=azure_endpoint,
+                credential=AzureKeyCredential(api_key)
+            )            
+        super().__init__(
+            model_id=model_id,
+            api_key=api_key,
+            client_kwargs=client_kwargs,
+            custom_role_conversions=custom_role_conversions,
+            **kwargs,
+        )
+
+    def create_client(self):
+        return self.localClient
+    
+    def __call__(
+        self,
+        messages: List[Dict[str, str]],
+        stop_sequences: Optional[List[str]] = None,
+        grammar: Optional[str] = None,
+        tools_to_call_from: Optional[List[Tool]] = None,
+        **kwargs,
+    ) -> ChatMessage:
+        completion_kwargs = self._prepare_completion_kwargs(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            grammar=grammar,
+            tools_to_call_from=tools_to_call_from,
+            model=self.model_id,
+            custom_role_conversions=self.custom_role_conversions,
+            convert_images_to_image_urls=True,
+            **kwargs,
+        )
+        completion_kwargs.pop("tool_choice", None)
+        response = self.localClient.complete(    
+            tool_choice="auto",        
+            **completion_kwargs
+        )
+        
+        # self.client.chat.completions.create(**completion_kwargs)
+        self.last_input_token_count = response.usage.prompt_tokens
+        self.last_output_token_count = response.usage.completion_tokens
+
+        first_message = ChatMessage.from_dict(
+            {"role": response.choices[0].message.role, "content": response.choices[0].message.content, "tool_calls": response.choices[0].message.tool_calls}
+        )
+        first_message.raw = response
+        return self.postprocess_message(first_message, tools_to_call_from)
+
 
 __all__ = [
     "MessageRole",
@@ -1152,5 +1256,6 @@ __all__ = [
     "OpenAIServerModel",
     "VLLMModel",
     "AzureOpenAIServerModel",
+    "AzureAIFoundryModel",
     "ChatMessage",
 ]
